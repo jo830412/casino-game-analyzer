@@ -33,10 +33,10 @@ with st.sidebar:
     st.markdown("[🔑 點此前往 Google AI Studio 取得 API Key](https://aistudio.google.com/app/apikey)")
 
     st.markdown("---")
-    st.markdown("### 💡 使用須知")
-    st.error("⚠️ **非常重要 (需綁定付費資訊)**：\n分析影片會消耗大量 Token，無論使用哪種模型，**API Key 帳號都必須綁定付費資訊 (Pay as you go)** 才能成功執行，否則將會遇到 Quota 限制錯誤無法使用。")
-    st.markdown("由於分析模型需要仔細核對影片長度與特效，按下分析後系統需要數分鐘時間進行影片讀取與處理。")
-    st.markdown("分析完畢後，雲端影片檔案將會被自動刪除，保護機密並確保不會浪費資源。")
+    with st.expander("💡 首次使用必看的計費與隱私須知", expanded=False):
+        st.error("⚠️ **非常重要 (需綁定付費資訊)**：\n分析影片會消耗大量 Token，無論使用哪種模型，**API Key 帳號都必須綁定付費資訊 (Pay as you go)** 才能成功執行，否則將會遇到 Quota 限制錯誤無法使用。")
+        st.markdown("由於分析模型需要仔細核對影片長度與特效，按下分析後系統需要數分鐘時間進行影片讀取與處理。")
+        st.markdown("分析完畢後，雲端影片檔案將會被自動刪除，保護機密並確保不會浪費資源。")
 
     st.markdown("---")
     # 模型選擇
@@ -59,16 +59,18 @@ st.markdown("---")
 # ================================
 col1, col2 = st.columns(2)
 with col1:
-    st.subheader("🏠 自家遊戲")
-    home_video = st.file_uploader("上傳自家遊戲影片 (支援 MP4/MOV)", type=["mp4", "mov", "avi"], key="home_vid")
-    if home_video:
-        st.video(home_video)
+    with st.container(border=True):
+        st.subheader("🏠 自家遊戲")
+        home_video = st.file_uploader("上傳自家遊戲影片 (支援 MP4/MOV)", type=["mp4", "mov", "avi"], key="home_vid")
+        if home_video:
+            st.video(home_video)
 
 with col2:
-    st.subheader("🔥 競品遊戲")
-    comp_video = st.file_uploader("上傳競品遊戲影片 (支援 MP4/MOV)", type=["mp4", "mov", "avi"], key="comp_vid")
-    if comp_video:
-        st.video(comp_video)
+    with st.container(border=True):
+        st.subheader("🔥 競品遊戲")
+        comp_video = st.file_uploader("上傳競品遊戲影片 (支援 MP4/MOV)", type=["mp4", "mov", "avi"], key="comp_vid")
+        if comp_video:
+            st.video(comp_video)
 
 st.markdown("---")
 game_type = st.selectbox(
@@ -126,7 +128,7 @@ def upload_video_to_gemini(client: genai.Client, uploaded_file, file_label: str 
                     f"{file_label} 處理失敗或逾時，最終狀態為：{myfile.state.name}（等待了 {waited}s）。"
                 )
 
-            st.success(f"✅ {file_label} 上傳完成！（狀態：{myfile.state.name}）")
+            st.toast(f"✅ {file_label} 上傳完成！", icon="🎉")
             return myfile
 
         finally:
@@ -206,10 +208,10 @@ if st.session_state.get("is_analyzing", False):
         progress_placeholder = st.empty()
         with progress_placeholder:
             components.html("""
-            <!DOCTYPE html><html><body style="margin: 0; padding: 0; font-family: sans-serif; overflow: hidden;">
-            <div style="width: 100%; height: 35px; background-color: #f0f2f6; border-radius: 6px; position: relative;">
-                <div id="ai-progress-bar" style="width: 0%; height: 100%; background-color: #00CC96; border-radius: 6px; transition: width 1s linear;"></div>
-                <div id="ai-progress-text" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; color: #31333F;">👻 正在準備解析影片...</div>
+            <!DOCTYPE html><html><body style="margin: 0; padding: 0; font-family: sans-serif; overflow: hidden; background-color: transparent;">
+            <div style="width: 100%; height: 35px; background-color: #262730; border-radius: 6px; position: relative; border: 1px solid #444;">
+                <div id="ai-progress-bar" style="width: 0%; height: 100%; background-color: #FFC107; border-radius: 6px; transition: width 1s linear;"></div>
+                <div id="ai-progress-text" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; color: #FAFAFA; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">👻 正在準備解析影片...</div>
             </div>
             <script>
                 let pb = document.getElementById('ai-progress-bar');
@@ -249,9 +251,8 @@ if st.session_state.get("is_analyzing", False):
                 if chunk.text:
                     yield chunk.text
         
-        # 串流輸出到畫面，並取得完整的字串儲存
         full_response_text = st.write_stream(stream_parser())
-        st.success("🎉 分析完成！")
+        st.toast("🎉 分析完成！", icon="🎉")
         
         # 將 Markdown 轉成精美的 HTML
         import markdown
@@ -325,33 +326,34 @@ if st.session_state.get("is_analyzing", False):
 # ================================
 if st.session_state.get("analysis_done", False):
     st.markdown("---")
+    st.markdown("### 📊 競品體驗分析報告")
     
-    # 如果不是剛剛分析完 (代表是按了其他按鈕觸發的重整)，就把存在記憶體的報告印出來
-    if not st.session_state.get("just_analyzed", False):
-        st.markdown("### 📊 競品體驗分析報告 (歷史紀錄)")
+    tab1, tab2 = st.tabs(["📄 AI 結構化報告", "💾 下載與匯出"])
+    
+    with tab1:
+        # 由於使用 st.rerun() 會重繪畫面，串流產生的文字會消失，所以在此直接顯示歷史報告
         st.markdown(st.session_state["report_md"])
-    else:
-        # 重設狀態，讓下次能正常顯示
-        st.session_state["just_analyzed"] = False
 
-    # 顯示下載按鈕
-    col1, col2 = st.columns(2)
-    with col1:
-        st.download_button(
-            label="📥 下載 HTML 報告 (推薦，保留排版)",
-            data=st.session_state["styled_html"],
-            file_name="競品分析報告.html",
-            mime="text/html",
-            type="primary",
-            use_container_width=True
-        )
-    with col2:
-        st.download_button(
-            label="📝 下載 Markdown 報告 (原始備份)",
-            data=st.session_state["report_md"],
-            file_name="競品分析報告.md",
-            mime="text/markdown",
-            use_container_width=True
-        )
+    with tab2:
+        st.markdown("您可以將報告下載為精美的 HTML 格式以供保存，或下載 Markdown 備份。")
+        # 顯示下載按鈕
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button(
+                label="📥 下載 HTML 報告 (推薦，保留排版)",
+                data=st.session_state["styled_html"],
+                file_name="競品分析報告.html",
+                mime="text/html",
+                type="primary",
+                use_container_width=True
+            )
+        with col2:
+            st.download_button(
+                label="📝 下載 Markdown 報告 (原始備份)",
+                data=st.session_state["report_md"],
+                file_name="競品分析報告.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
 
     st.caption("💡 小提示：上方的下載按鈕就算點擊後，這份報告也**不會再消失**了！")
