@@ -26,7 +26,7 @@ if "styled_html" not in st.session_state:
     st.session_state["styled_html"] = ""
 
 st.title("🎰 Casino Game AI 競品分析儀")
-st.caption("🏷️ 版本：v1.1.0 (報告排版強化版)")
+st.caption("🏷️ 版本：v1.2.0 (新增雷達圖與區段分析)")
 st.markdown("快速比較自家產品與市面競品的遊玩體驗差異，並產生具有體感的結構化改善報告。")
 
 # 側邊欄：設定
