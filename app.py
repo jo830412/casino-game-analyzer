@@ -26,7 +26,7 @@ if "styled_html" not in st.session_state:
     st.session_state["styled_html"] = ""
 
 st.title("🎰 Casino Game AI 競品分析儀")
-st.caption("🏷️ 版本：v1.2.1 (獨立區段設定與排版優化)")
+st.caption("🏷️ 版本：v1.2.2 (修正雷達圖與評分格式)")
 st.markdown("快速比較自家產品與市面競品的遊玩體驗差異，並產生具有體感的結構化改善報告。")
 
 # 側邊欄：設定
@@ -232,8 +232,8 @@ if st.session_state.get("is_analyzing", False):
 格式範例：
 ```json
 {{
-  "home": [8, 7, 6, 8, 7],
-  "comp": [9, 9, 8, 7, 9]
+  "home": {{"節奏爽快感": 8, "視覺特效": 7, "音效層次": 6, "UI直覺度": 8, "期待感營造": 7}},
+  "comp": {{"節奏爽快感": 9, "視覺特效": 9, "音效層次": 8, "UI直覺度": 7, "期待感營造": 9}}
 }}
 ```
 """
@@ -406,13 +406,21 @@ if st.session_state.get("is_analyzing", False):
 # 5. 結果渲染與狀態保留區
 # ================================
 def render_radar_chart(report_text):
-    match = re.search(r'```json\s*(.*?)\s*```', report_text, re.DOTALL)
+    match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', report_text, re.DOTALL | re.IGNORECASE)
     if match:
         try:
             data = json.loads(match.group(1))
-            home_scores = data.get("home", [0]*5)
-            comp_scores = data.get("comp", [0]*5)
             categories = ['節奏爽快感', '視覺特效', '音效層次', 'UI直覺度', '期待感營造']
+            
+            def extract_scores(score_data):
+                if isinstance(score_data, dict):
+                    return [score_data.get(cat, 0) for cat in categories]
+                elif isinstance(score_data, list) and len(score_data) >= 5:
+                    return score_data[:5]
+                return [0] * 5
+                
+            home_scores = extract_scores(data.get("home"))
+            comp_scores = extract_scores(data.get("comp"))
             
             # 要封閉多邊形，需要在尾端補上起點
             home_scores_loop = home_scores + [home_scores[0]]
@@ -434,7 +442,7 @@ def render_radar_chart(report_text):
                 showlegend=True,
                 title="🎯 競品體驗維度對比"
             )
-            return fig, re.sub(r'```json\s*.*?\s*```', '', report_text, flags=re.DOTALL)
+            return fig, re.sub(r'```(?:json)?\s*\{.*?\}\s*```', '', report_text, flags=re.DOTALL | re.IGNORECASE)
         except Exception:
             pass
     return None, report_text
