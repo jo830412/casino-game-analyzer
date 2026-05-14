@@ -5,6 +5,8 @@ import tempfile
 import os
 import time
 import pathlib
+import json
+import re
 
 # ================================
 # 1. 介面與基本設定
@@ -84,6 +86,16 @@ custom_focus = st.text_area(
     "🎯 本次分析有什麼特別想關注的細節嗎？（選填）",
     help="例如：特別注意 Free Game 的過場速度、中大獎的音效層次、按鈕擺放位置等。"
 )
+
+st.markdown("---")
+st.subheader("⏱️ 分析區間設定")
+enable_time_range = st.checkbox("啟用指定分析區間 (僅分析精彩片段以節省 Token)", value=False)
+time_range_prompt = ""
+if enable_time_range:
+    col_t1, col_t2 = st.columns(2)
+    start_sec = col_t1.number_input("開始時間 (秒)", min_value=0, value=0, step=1)
+    end_sec = col_t2.number_input("結束時間 (秒)", min_value=1, value=30, step=1)
+    time_range_prompt = f"\n\n⏱️ **重要指令**：請你嚴格僅針對影片的 {start_sec} 秒 到 {end_sec} 秒 之間的內容進行分析，請忽略這段時間以外的畫面。"
 
 # ================================
 # 3. 核心處理函式
@@ -171,7 +183,7 @@ if st.session_state.get("is_analyzing", False):
         custom_focus_prompt = f"\n\n🚨 **使用者特別指定的觀察重點**：\n{custom_focus}\n請特別針對上述要求進行分析與解答。" if custom_focus.strip() else ""
         
         prompt = f"""你是一位資深博弈遊戲測試員與 UX 研究員。請仔細觀看兩支【{game_type}】的實機遊玩影片，進行深度的競品差異分析，並產生結構化報告。
-第一支影片為【自家遊戲】，第二支影片為【競品遊戲】。{custom_focus_prompt}
+第一支影片為【自家遊戲】，第二支影片為【競品遊戲】。{custom_focus_prompt}{time_range_prompt}
 
 分析重點需包含：
 1. 核心節奏與操作感：Spin/發牌的速度、連押的流暢度、以及中獎前的『期待感營造（例如老虎機的聽牌/Scatter 特效延遲）』。
@@ -202,6 +214,18 @@ if st.session_state.get("is_analyzing", False):
 ---
 ## 💡 4. 具體優化建議
 (基於測試員觀點，提出 2~3 個自家產品可優先調整的開發/美術建議。請具體說明「如何改」以及「預期的改善效果」。)
+
+---
+## 📊 5. 數據化評分
+請為兩款產品在以下 5 個維度給出 1~10 分的客觀評分，並**嚴格將結果以 JSON 格式包裝在 ```json 與 ``` 區塊內**，放置於報告的最尾端。
+維度包含：節奏爽快感、視覺特效、音效層次、UI直覺度、期待感營造。
+格式範例：
+```json
+{{
+  "home": [8, 7, 6, 8, 7],
+  "comp": [9, 9, 8, 7, 9]
+}}
+```
 """
 
         st.markdown("### 📊 競品體驗分析報告")
@@ -371,6 +395,40 @@ if st.session_state.get("is_analyzing", False):
 # ================================
 # 5. 結果渲染與狀態保留區
 # ================================
+def render_radar_chart(report_text):
+    match = re.search(r'```json\s*(.*?)\s*```', report_text, re.DOTALL)
+    if match:
+        try:
+            data = json.loads(match.group(1))
+            home_scores = data.get("home", [0]*5)
+            comp_scores = data.get("comp", [0]*5)
+            categories = ['節奏爽快感', '視覺特效', '音效層次', 'UI直覺度', '期待感營造']
+            
+            # 要封閉多邊形，需要在尾端補上起點
+            home_scores_loop = home_scores + [home_scores[0]]
+            comp_scores_loop = comp_scores + [comp_scores[0]]
+            cat_loop = categories + [categories[0]]
+            
+            import plotly.graph_objects as go
+            fig = go.Figure()
+            fig.add_trace(go.Scatterpolar(
+                r=home_scores_loop, theta=cat_loop, fill='toself', name='自家遊戲',
+                line_color='#3b82f6', fillcolor='rgba(59, 130, 246, 0.3)'
+            ))
+            fig.add_trace(go.Scatterpolar(
+                r=comp_scores_loop, theta=cat_loop, fill='toself', name='競品遊戲',
+                line_color='#ef4444', fillcolor='rgba(239, 68, 68, 0.3)'
+            ))
+            fig.update_layout(
+                polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
+                showlegend=True,
+                title="🎯 競品體驗維度對比"
+            )
+            return fig, re.sub(r'```json\s*.*?\s*```', '', report_text, flags=re.DOTALL)
+        except Exception:
+            pass
+    return None, report_text
+
 if st.session_state.get("analysis_done", False):
     st.markdown("---")
     st.markdown("### 📊 競品體驗分析報告")
@@ -378,9 +436,14 @@ if st.session_state.get("analysis_done", False):
     tab1, tab2 = st.tabs(["📄 AI 結構化報告", "💾 下載與匯出"])
     
     with tab1:
+        # 解析雷達圖與移除原始 JSON
+        fig, clean_report = render_radar_chart(st.session_state["report_md"])
+        if fig:
+            st.plotly_chart(fig, use_container_width=True)
+
         # 由於使用 st.rerun() 會重繪畫面，串流產生的文字會消失，所以在此直接顯示歷史報告
         with st.container(border=True):
-            st.markdown(st.session_state["report_md"])
+            st.markdown(clean_report)
 
     with tab2:
         st.markdown("您可以將報告下載為精美的 HTML 格式以供保存，或下載 Markdown 備份。")
