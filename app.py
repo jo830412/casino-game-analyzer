@@ -7,6 +7,8 @@ import time
 import pathlib
 import json
 import re
+import markdown as md_lib
+from datetime import datetime
 
 # ================================
 # 1. 介面與基本設定
@@ -35,6 +37,8 @@ if "report_md" not in st.session_state:
     st.session_state["report_md"] = ""
 if "styled_html" not in st.session_state:
     st.session_state["styled_html"] = ""
+if "analysis_history" not in st.session_state:
+    st.session_state["analysis_history"] = []
 
 st.title("🎰 Casino Game AI 競品分析儀")
 st.caption("🏷️ 版本：v1.3.0 (全面體驗升級)")
@@ -70,9 +74,9 @@ with st.sidebar:
         [
             "gemini-2.5-flash",
             "gemini-2.5-pro",
-            "gemini-3.1-pro-preview",
+            "gemini-2.5-pro-preview-05-06",
         ],
-        help="Google 已停用 2.0 系列新用戶存取。請使用最新的 gemini-2.5-flash (快) 或 gemini-2.5-pro (精準)。"
+        help="建議使用 gemini-2.5-flash（速度快、費用低）或 gemini-2.5-pro（分析更精準）。"
     )
 
 
@@ -124,12 +128,23 @@ if enable_time_range:
     comp_start = col_c1.text_input("🔥 競品開始", value="00:00")
     comp_end = col_c2.text_input("🔥 競品結束", value="00:30")
     
-    time_range_prompt = (
-        f"\n\n⏱️ **重要指令（時間區段分析）**：\n"
-        f"- 對於【自家遊戲】，請嚴格僅針對影片中 **{home_start} 到 {home_end}** 的畫面進行分析。\n"
-        f"- 對於【競品遊戲】，請嚴格僅針對影片中 **{comp_start} 到 {comp_end}** 的畫面進行分析。\n"
-        f"請完全忽略上述時間區段以外的其他畫面。"
-    )
+    # 驗證時間格式 mm:ss
+    time_pattern = re.compile(r'^\d{2}:\d{2}$')
+    time_inputs = {
+        "🏠 自家開始": home_start, "🏠 自家結束": home_end,
+        "🔥 競品開始": comp_start, "🔥 競品結束": comp_end,
+    }
+    invalid_times = [k for k, v in time_inputs.items() if not time_pattern.match(v.strip())]
+    if invalid_times:
+        st.warning(f"⚠️ 以下時間格式不正確（需為 `分:秒`，例如 `01:30`）：{', '.join(invalid_times)}。分析時將**忽略時間設定**。")
+        time_range_prompt = ""
+    else:
+        time_range_prompt = (
+            f"\n\n⏱️ **重要指令（時間區段分析）**：\n"
+            f"- 對於【自家遊戲】，請嚴格僅針對影片中 **{home_start} 到 {home_end}** 的畫面進行分析。\n"
+            f"- 對於【競品遊戲】，請嚴格僅針對影片中 **{comp_start} 到 {comp_end}** 的畫面進行分析。\n"
+            f"請完全忽略上述時間區段以外的其他畫面。"
+        )
 
 # ================================
 # 3. 核心處理函式
@@ -141,11 +156,13 @@ def render_radar_chart(report_text):
     """
     import plotly.graph_objects as go
     categories = ['節奏爽快感', '視覺特效', '音效層次', 'UI直覺度', '期待感營造']
-    match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', report_text)
-    if not match:
+    # 取最後一個 JSON 區塊（AI 通常把評分 JSON 放在報告最末端）
+    all_matches = list(re.finditer(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', report_text))
+    if not all_matches:
         return None, report_text, None
-    json_str = match.group(1)
-    json_block_full = match.group(0)
+    last_match = all_matches[-1]
+    json_str = last_match.group(1)
+    json_block_full = last_match.group(0)
     try:
         data = json.loads(json_str)
         def extract_scores(sd):
@@ -193,7 +210,7 @@ def upload_video_to_gemini(client: genai.Client, uploaded_file, file_label: str 
     with st.spinner(f"正在傳送 {file_label} 至 Google AI..."):
         ext = pathlib.Path(uploaded_file.name).suffix
         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
-            tmp_file.write(uploaded_file.read())
+            tmp_file.write(uploaded_file.getvalue())  # 用 getvalue() 避免 stream 耗盡問題，支援重複分析
             tmp_file_path = tmp_file.name
 
         try:
@@ -316,35 +333,41 @@ if st.session_state.get("is_analyzing", False):
 """
 
         st.markdown("### 📊 競品體驗分析報告")
-        
-        # 前端 JS 實作的無縫讀取條
+
+        # 根據影片大小動態估算 AI 回應時間（秒）
+        total_size_mb = (home_video.size + comp_video.size) / (1024 * 1024)
+        estimated_seconds = max(30, min(150, int(total_size_mb * 3 + 30)))
+
+        # 前端 JS 實作的無縫讀取條（用字串拼接插入動態秒數，避免 f-string 與 JS {} 衝突）
+        _js_total = str(estimated_seconds)
+        _progress_html = (
+            '<!DOCTYPE html><html><body style="margin: 0; padding: 0; font-family: sans-serif; overflow: hidden; background-color: transparent;">'
+            '<div style="width: 100%; height: 35px; background-color: #262730; border-radius: 6px; position: relative; border: 1px solid #444;">'
+            '<div id="ai-progress-bar" style="width: 0%; height: 100%; background-color: #FFC107; border-radius: 6px; transition: width 1s linear;"></div>'
+            '<div id="ai-progress-text" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; color: #FAFAFA; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">👻 正在準備解析影片...</div>'
+            '</div>'
+            '<script>'
+            'let pb = document.getElementById("ai-progress-bar");'
+            'let pt = document.getElementById("ai-progress-text");'
+            'let t = 0; let total = ' + _js_total + ';'
+            'let iv = setInterval(() => {'
+            '  t++;'
+            '  let pct = Math.min((t/total)*95, 95);'
+            '  if(pb) pb.style.width = pct + "%";'
+            '  if(pt) {'
+            '    if (t < 10) pt.innerText = "👀 正在以 10 倍速解析影片中... (" + Math.floor(pct) + "%)";'
+            '    else if (t < 25) pt.innerText = "🧠 正在對比兩款遊戲的節奏與特效差異... (" + Math.floor(pct) + "%)";'
+            '    else if (t < 40) pt.innerText = "📝 正在整理結構化總結與最佳化建議... (" + Math.floor(pct) + "%)";'
+            '    else pt.innerText = "✨ 報告即將出爐，請稍候... (" + Math.floor(pct) + "%)";'
+            '  }'
+            '  if (t >= total) clearInterval(iv);'
+            '}, 1000);'
+            '</script>'
+            '</body></html>'
+        )
         progress_placeholder = st.empty()
         with progress_placeholder:
-            components.html("""
-            <!DOCTYPE html><html><body style="margin: 0; padding: 0; font-family: sans-serif; overflow: hidden; background-color: transparent;">
-            <div style="width: 100%; height: 35px; background-color: #262730; border-radius: 6px; position: relative; border: 1px solid #444;">
-                <div id="ai-progress-bar" style="width: 0%; height: 100%; background-color: #FFC107; border-radius: 6px; transition: width 1s linear;"></div>
-                <div id="ai-progress-text" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; color: #FAFAFA; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">👻 正在準備解析影片...</div>
-            </div>
-            <script>
-                let pb = document.getElementById('ai-progress-bar');
-                let pt = document.getElementById('ai-progress-text');
-                let t = 0; let total = 45; // 預期等待 45 秒
-                let iv = setInterval(() => {
-                    t++;
-                    let pct = Math.min((t/total)*95, 95);
-                    if(pb) pb.style.width = pct + '%';
-                    if(pt) {
-                        if (t < 10) pt.innerText = '👀 正在以 10 倍速解析影片中... (' + Math.floor(pct) + '%)';
-                        else if (t < 25) pt.innerText = '🧠 正在對比兩款遊戲的節奏與特效差異... (' + Math.floor(pct) + '%)';
-                        else if (t < 40) pt.innerText = '📝 正在整理結構化總結與最佳化建議... (' + Math.floor(pct) + '%)';
-                        else pt.innerText = '✨ 報告即將出爐，請稍候... (' + Math.floor(pct) + '%)';
-                    }
-                    if (t >= total) clearInterval(iv);
-                }, 1000);
-            </script>
-            </body></html>
-            """, height=40)
+            components.html(_progress_html, height=40)
 
         response_stream = client.models.generate_content_stream(
             model=model_choice,
@@ -368,7 +391,6 @@ if st.session_state.get("is_analyzing", False):
         st.toast("🎉 分析完成！", icon="🎉")
         
         # 將 Markdown 轉成精美的 HTML（含雷達圖）
-        import markdown as md_lib
         # 先解析雷達圖，以便把圖表嵌入 HTML
         _fig_export, _clean_export, _scores_export = render_radar_chart(full_response_text)
         radar_html_embed = _fig_export.to_html(full_html=False, include_plotlyjs='inline') if _fig_export else ""
@@ -405,6 +427,13 @@ if st.session_state.get("is_analyzing", False):
         st.session_state["styled_html"] = styled_html
         st.session_state["analysis_done"] = True
         st.session_state["just_analyzed"] = True
+        # 加入歷史記錄
+        st.session_state["analysis_history"].append({
+            "time": datetime.now().strftime("%m/%d %H:%M"),
+            "game_type": game_type,
+            "report_md": full_response_text,
+            "styled_html": styled_html,
+        })
 
     except Exception as e:
         error_msg = str(e)
@@ -434,17 +463,32 @@ if st.session_state.get("is_analyzing", False):
 # 5. 結果渲染與狀態保留區
 # ================================
 
-if st.session_state.get("analysis_done", False):
+if st.session_state.get("analysis_history"):
     st.markdown("---")
-    st.markdown("### 📊 競品體驗分析報告")
-    
-    tab1, tab2 = st.tabs(["📄 AI 結構化報告", "💾 下載與匯出"])
-    
-    with tab1:
-        # 解析雷達圖與移除原始 JSON
-        fig, clean_report, scores = render_radar_chart(st.session_state["report_md"])
+    history = st.session_state["analysis_history"]
 
-        # 評分 Metric 卡片
+    # 歷史記錄選擇器（多於 1 筆才顯示）
+    if len(history) > 1:
+        history_labels = [
+            f"第 {i+1} 次｜{h['game_type']}｜{h['time']}" for i, h in enumerate(history)
+        ]
+        selected_idx = st.selectbox(
+            f"📂 歷史報告記錄（共 {len(history)} 筆，可切換查看）",
+            range(len(history_labels)),
+            index=len(history_labels) - 1,
+            format_func=lambda i: history_labels[i],
+        )
+        current_report = history[selected_idx]
+    else:
+        current_report = history[-1]
+
+    st.markdown("### 📊 競品體驗分析報告")
+
+    tab1, tab2 = st.tabs(["📄 AI 結構化報告", "💾 下載與匯出"])
+
+    with tab1:
+        fig, clean_report, scores = render_radar_chart(current_report["report_md"])
+
         if scores:
             home_avg = sum(scores["home"]) / len(scores["home"])
             comp_avg = sum(scores["comp"]) / len(scores["comp"])
@@ -460,19 +504,18 @@ if st.session_state.get("analysis_done", False):
         if fig:
             st.plotly_chart(fig, use_container_width=True)
 
-        # 由於使用 st.rerun() 會重繪畫面，串流產生的文字會消失，所以在此直接顯示歷史報告
         with st.container(border=True):
             st.markdown(clean_report)
 
     with tab2:
         st.markdown("您可以將報告下載為精美的 HTML 格式以供保存，或下載 Markdown 備份。")
-        # 顯示下載按鈕
+        safe_time = current_report['time'].replace('/', '-').replace(' ', '_').replace(':', '')
         col1, col2 = st.columns(2)
         with col1:
             st.download_button(
                 label="📥 下載 HTML 報告 (推薦，保留排版)",
-                data=st.session_state["styled_html"],
-                file_name="競品分析報告.html",
+                data=current_report["styled_html"],
+                file_name=f"競品分析報告_{safe_time}.html",
                 mime="text/html",
                 type="primary",
                 use_container_width=True
@@ -480,8 +523,8 @@ if st.session_state.get("analysis_done", False):
         with col2:
             st.download_button(
                 label="📝 下載 Markdown 報告 (原始備份)",
-                data=st.session_state["report_md"],
-                file_name="競品分析報告.md",
+                data=current_report["report_md"],
+                file_name=f"競品分析報告_{safe_time}.md",
                 mime="text/markdown",
                 use_container_width=True
             )
