@@ -15,6 +15,17 @@ st.set_page_config(page_title="Casino Game AI 競品分析儀", page_icon="🎰"
 
 import streamlit.components.v1 as components
 
+# 注入 Google Fonts + 自定義 CSS
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+html, body, [class*="css"] {
+    font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif !important;
+}
+h1 { letter-spacing: -0.02em; }
+</style>
+""", unsafe_allow_html=True)
+
 # 初始化 Session State
 if "is_analyzing" not in st.session_state:
     st.session_state["is_analyzing"] = False
@@ -26,7 +37,7 @@ if "styled_html" not in st.session_state:
     st.session_state["styled_html"] = ""
 
 st.title("🎰 Casino Game AI 競品分析儀")
-st.caption("🏷️ 版本：v1.2.3 (修正評分區塊解析容錯)")
+st.caption("🏷️ 版本：v1.3.0 (全面體驗升級)")
 st.markdown("快速比較自家產品與市面競品的遊玩體驗差異，並產生具有體感的結構化改善報告。")
 
 # 側邊欄：設定
@@ -36,9 +47,20 @@ with st.sidebar:
     st.markdown("[🔑 點此前往 Google AI Studio 取得 API Key](https://aistudio.google.com/app/apikey)")
 
     st.markdown("---")
-    with st.expander("💡 首次使用必看的計費與隱私須知", expanded=False):
-        st.error("⚠️ **非常重要 (需綁定付費資訊)**：\n分析影片會消耗大量 Token，無論使用哪種模型，**API Key 帳號都必須綁定付費資訊 (Pay as you go)** 才能成功執行，否則將會遇到 Quota 限制錯誤無法使用。")
-        st.markdown("由於分析模型需要仔細核對影片長度與特效，按下分析後系統需要數分鐘時間進行影片讀取與處理。")
+    with st.expander("📋 使用步驟（點我展開）", expanded=True):
+        st.markdown("""
+1. 🔑 輸入您的 Gemini API Key
+2. 🎮 選擇遊戲類型
+3. 📹 上傳自家與競品影片
+4. ⏱️ (選填) 指定分析區間
+5. 🎯 (選填) 填寫特別觀察重點
+6. 🚀 點擊「開始深度分析」
+7. 📊 查看報告與雷達圖
+8. 💾 下載完整 HTML 報告（含圖表）
+""")
+
+    with st.expander("💡 計費與隱私須知", expanded=False):
+        st.error("⚠️ **非常重要 (需綁定付費資訊)**：\n分析影片會消耗大量 Token，**API Key 帳號都必須綁定付費資訊 (Pay as you go)** 才能成功執行。")
         st.markdown("分析完畢後，雲端影片檔案將會被自動刪除，保護機密並確保不會浪費資源。")
 
     st.markdown("---")
@@ -64,14 +86,16 @@ col1, col2 = st.columns(2)
 with col1:
     with st.container(border=True):
         st.subheader("🏠 自家遊戲")
-        home_video = st.file_uploader("上傳自家遊戲影片 (支援 MP4/MOV)", type=["mp4", "mov", "avi"], key="home_vid")
+        home_video = st.file_uploader("上傳自家遊戲影片 (MP4 / MOV / AVI)", type=["mp4", "mov", "avi"], key="home_vid")
+        st.caption("📁 支援直接拖放 · 建議長度 30 秒～3 分鐘 · 請確認影片包含完整遊玩流程")
         if home_video:
             st.video(home_video)
 
 with col2:
     with st.container(border=True):
         st.subheader("🔥 競品遊戲")
-        comp_video = st.file_uploader("上傳競品遊戲影片 (支援 MP4/MOV)", type=["mp4", "mov", "avi"], key="comp_vid")
+        comp_video = st.file_uploader("上傳競品遊戲影片 (MP4 / MOV / AVI)", type=["mp4", "mov", "avi"], key="comp_vid")
+        st.caption("📁 支援直接拖放 · 建議長度 30 秒～3 分鐘 · 請確認影片包含完整遊玩流程")
         if comp_video:
             st.video(comp_video)
 
@@ -125,25 +149,27 @@ def upload_video_to_gemini(client: genai.Client, uploaded_file, file_label: str 
             mime_map = {".mp4": "video/mp4", ".mov": "video/quicktime", ".avi": "video/x-msvideo"}
             mime_type = mime_map.get(ext.lower(), "video/mp4")
 
+            upload_bar = st.progress(0, text=f"📤 {file_label} 正在上傳至 Google AI 雲端...") 
             myfile = client.files.upload(
                 file=tmp_file_path,
                 config=types.UploadFileConfig(mime_type=mime_type)
             )
+            upload_bar.progress(30, text=f"✅ {file_label} 上傳完成，等待雲端處理...")
 
-            progress_bar = st.progress(0, text=f"⏳ 雲端處理中...準備開始處理 {file_label}")
             max_wait = 120   # 最多等 120 秒
             waited = 0
 
             # 持續輪詢，直到狀態不再是 PROCESSING
             while myfile.state.name == "PROCESSING" and waited < max_wait:
-                # 模擬推進進度百分比 (從 5% 推進到 95%)
-                percent = min(5 + int((waited / max_wait) * 90), 95)
-                progress_bar.progress(percent, text=f"⏳ {file_label} 在雲端上傳中（已等待 {waited}s / {percent}%），這可能會花幾分鐘...")
+                percent = min(30 + int((waited / max_wait) * 65), 95)
+                upload_bar.progress(percent, text=f"⚙️ {file_label} 雲端處理中（{waited}s），請稍候...")
                 time.sleep(5)
                 waited += 5
                 myfile = client.files.get(name=myfile.name)
 
-            progress_bar.empty()
+            upload_bar.progress(100, text=f"🎉 {file_label} 就緒！")
+            time.sleep(0.4)
+            upload_bar.empty()
 
             # 嚴格確認最終狀態必須為 ACTIVE
             if myfile.state.name != "ACTIVE":
@@ -290,94 +316,45 @@ if st.session_state.get("is_analyzing", False):
         full_response_text = st.write_stream(stream_parser())
         st.toast("🎉 分析完成！", icon="🎉")
         
-        # 將 Markdown 轉成精美的 HTML
-        import markdown
-        html_content = markdown.markdown(full_response_text, extensions=['tables'])
-        
-        # 加上漂亮的中文字型與排版 CSS
-        styled_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>競品體驗分析報告</title>
-            <style>
-                body {{
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Microsoft JhengHei', sans-serif;
-                    line-height: 1.8;
-                    color: #2d3748;
-                    background-color: #edf2f7;
-                    margin: 0;
-                    padding: 40px 20px;
-                }}
-                .container {{
-                    max-width: 850px;
-                    margin: 0 auto;
-                    background-color: #ffffff;
-                    padding: 40px 50px;
-                    border-radius: 12px;
-                    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
-                }}
-                h1, h2, h3 {{ 
-                    color: #1a202c; 
-                    margin-top: 1.5em;
-                }}
-                h2 {{
-                    border-bottom: 3px solid #ebf8ff;
-                    padding-bottom: 0.4em;
-                    color: #2b6cb0;
-                }}
-                blockquote {{
-                    margin: 1.5em 0;
-                    padding: 1em 1.5em;
-                    background: #ebf8ff;
-                    border-left: 5px solid #3182ce;
-                    border-radius: 0 8px 8px 0;
-                    color: #2c5282;
-                    font-weight: 500;
-                }}
-                ul, ol {{ padding-left: 24px; margin-bottom: 1.5em; }}
-                li {{ margin-bottom: 0.5em; }}
-                table {{ 
-                    border-collapse: collapse; 
-                    width: 100%; 
-                    margin: 2em 0; 
-                    border-radius: 8px;
-                    overflow: hidden;
-                    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-                }}
-                th, td {{ 
-                    padding: 12px 15px; 
-                    text-align: left; 
-                }}
-                th {{ 
-                    background-color: #4299e1; 
-                    color: white; 
-                    font-weight: 600; 
-                }}
-                tr:nth-child(even) {{ background-color: #f7fafc; }}
-                hr {{
-                    border: 0;
-                    height: 1px;
-                    background: #e2e8f0;
-                    margin: 3em 0;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                {html_content}
-            </div>
-        </body>
-        </html>
-        """
-        
+        # 將 Markdown 轉成精美的 HTML（含雷達圖）
+        import markdown as md_lib
+        # 先解析雷達圖，以便把圖表嵌入 HTML
+        _fig_export, _clean_export, _scores_export = render_radar_chart(full_response_text)
+        radar_html_embed = _fig_export.to_html(full_html=False, include_plotlyjs='cdn') if _fig_export else ""
+        html_body = md_lib.markdown(_clean_export if _clean_export else full_response_text, extensions=['tables'])
+
+        styled_html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>競品體驗分析報告</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {{ font-family: 'Noto Sans TC','Microsoft JhengHei',sans-serif; line-height:1.8; color:#2d3748; background:#edf2f7; margin:0; padding:40px 20px; }}
+        .container {{ max-width:850px; margin:0 auto; background:#fff; padding:40px 50px; border-radius:12px; box-shadow:0 10px 25px rgba(0,0,0,.05); }}
+        h2 {{ border-bottom:3px solid #ebf8ff; padding-bottom:.4em; color:#2b6cb0; margin-top:1.5em; }}
+        blockquote {{ margin:1.5em 0; padding:1em 1.5em; background:#ebf8ff; border-left:5px solid #3182ce; border-radius:0 8px 8px 0; color:#2c5282; font-weight:500; }}
+        ul,ol {{ padding-left:24px; margin-bottom:1.5em; }} li {{ margin-bottom:.5em; }}
+        table {{ border-collapse:collapse; width:100%; margin:2em 0; border-radius:8px; overflow:hidden; box-shadow:0 4px 6px rgba(0,0,0,.05); }}
+        th,td {{ padding:12px 15px; text-align:left; }} th {{ background:#4299e1; color:#fff; font-weight:600; }}
+        tr:nth-child(even) {{ background:#f7fafc; }}
+        hr {{ border:0; height:1px; background:#e2e8f0; margin:3em 0; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        {radar_html_embed}
+        {html_body}
+    </div>
+</body>
+</html>"""
+
         # 存入 session_state 避免畫面重整消失
         st.session_state["report_md"] = full_response_text
         st.session_state["styled_html"] = styled_html
         st.session_state["analysis_done"] = True
         st.session_state["just_analyzed"] = True
-        
+
     except Exception as e:
         error_msg = str(e)
         if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg or "Quota exceeded" in error_msg:
@@ -397,7 +374,7 @@ if st.session_state.get("is_analyzing", False):
                     client.files.delete(name=f.name)
                 except Exception:
                     pass
-        
+
         # 不論成功失敗，都要解除按鈕鎖定並重整畫面
         st.session_state["is_analyzing"] = False
         st.rerun()
@@ -408,26 +385,20 @@ if st.session_state.get("is_analyzing", False):
 def render_radar_chart(report_text):
     """
     嘗試從報告 Markdown 內找出 JSON 評分區塊，畫出雷達圖。
-    成功: 返回 (fig, 移除 json 區塊後的報告)
-    失敗: 返回 (None, 原始報告) -- 確保內容不消失
+    回傳 (fig, clean_report, scores_dict | None)
     """
     import plotly.graph_objects as go
-    
+
     categories = ['節奏爽快感', '視覺特效', '音效層次', 'UI直覺度', '期待感營造']
-    
-    # 更寬鬆的 Regex：同時支援 ```json 和 ``` 的代碼塊
     match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', report_text)
-    
     if not match:
-        # AI 沒有產出代碼塊，直接返回原始報告
-        return None, report_text
-    
+        return None, report_text, None
+
     json_str = match.group(1)
-    json_block_full = match.group(0)  # 包含 ```json ... ``` 的完整區塊
-    
+    json_block_full = match.group(0)
     try:
         data = json.loads(json_str)
-        
+
         def extract_scores(score_data):
             if isinstance(score_data, dict):
                 return [float(score_data.get(cat, 0)) for cat in categories]
@@ -437,8 +408,6 @@ def render_radar_chart(report_text):
 
         home_scores = extract_scores(data.get("home"))
         comp_scores = extract_scores(data.get("comp"))
-        
-        # 封閉多邊形：尾端补上起點
         home_loop = home_scores + [home_scores[0]]
         comp_loop = comp_scores + [comp_scores[0]]
         cat_loop  = categories  + [categories[0]]
@@ -446,24 +415,32 @@ def render_radar_chart(report_text):
         fig = go.Figure()
         fig.add_trace(go.Scatterpolar(
             r=home_loop, theta=cat_loop, fill='toself', name='自家遊戲',
-            line_color='#3b82f6', fillcolor='rgba(59, 130, 246, 0.3)'
+            line_color='#3b82f6', fillcolor='rgba(59, 130, 246, 0.3)',
+            mode='lines+markers+text',
+            text=[f"{v:.0f}" for v in home_scores] + [""],
+            textposition='top center'
         ))
         fig.add_trace(go.Scatterpolar(
             r=comp_loop, theta=cat_loop, fill='toself', name='競品遊戲',
-            line_color='#ef4444', fillcolor='rgba(239, 68, 68, 0.3)'
+            line_color='#ef4444', fillcolor='rgba(239, 68, 68, 0.3)',
+            mode='lines+markers+text',
+            text=[f"{v:.0f}" for v in comp_scores] + [""],
+            textposition='top center'
         ))
         fig.update_layout(
             polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
             showlegend=True,
             title="🎯 競品體驗維度對比"
         )
-        # 成功畫圖，移除報告中的原始 JSON 區塊
-        clean = report_text.replace(json_block_full, "").strip()
-        return fig, clean
+        sections = re.split(r'(?m)^---\s*$', report_text)
+        clean_sections = [sec for sec in sections if json_block_full not in sec]
+        clean = "\n\n---\n\n".join(clean_sections).strip()
+        scores = {"home": home_scores, "comp": comp_scores}
+        return fig, clean, scores
 
-    except Exception as err:
-        # JSON 解析失敗——返回原始報告，避免內容丟失
-        return None, report_text
+    except Exception:
+        return None, report_text, None
+
 
 if st.session_state.get("analysis_done", False):
     st.markdown("---")
@@ -473,7 +450,21 @@ if st.session_state.get("analysis_done", False):
     
     with tab1:
         # 解析雷達圖與移除原始 JSON
-        fig, clean_report = render_radar_chart(st.session_state["report_md"])
+        fig, clean_report, scores = render_radar_chart(st.session_state["report_md"])
+
+        # 評分 Metric 卡片
+        if scores:
+            home_avg = sum(scores["home"]) / len(scores["home"])
+            comp_avg = sum(scores["comp"]) / len(scores["comp"])
+            gap = comp_avg - home_avg
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("🏠 自家平均分", f"{home_avg:.1f} / 10")
+            mc2.metric("🔥 競品平均分", f"{comp_avg:.1f} / 10")
+            mc3.metric("🎯 差距", f"{abs(gap):.1f} 分",
+                       delta=f"自家落後 {abs(gap):.1f} 分" if gap > 0 else f"自家領先 {abs(gap):.1f} 分",
+                       delta_color="inverse" if gap > 0 else "normal")
+            st.markdown("---")
+
         if fig:
             st.plotly_chart(fig, use_container_width=True)
 
