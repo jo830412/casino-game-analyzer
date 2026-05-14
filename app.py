@@ -134,6 +134,57 @@ if enable_time_range:
 # ================================
 # 3. 核心處理函式
 # ================================
+def render_radar_chart(report_text):
+    """
+    嘗試從報告 Markdown 內找出 JSON 評分區塊，畫出雷達圖。
+    回傳 (fig, clean_report, scores_dict | None)
+    """
+    import plotly.graph_objects as go
+    categories = ['節奏爽快感', '視覺特效', '音效層次', 'UI直覺度', '期待感營造']
+    match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', report_text)
+    if not match:
+        return None, report_text, None
+    json_str = match.group(1)
+    json_block_full = match.group(0)
+    try:
+        data = json.loads(json_str)
+        def extract_scores(sd):
+            if isinstance(sd, dict):
+                return [float(sd.get(c, 0)) for c in categories]
+            elif isinstance(sd, list) and len(sd) >= 5:
+                return [float(v) for v in sd[:5]]
+            return [0.0] * 5
+        home_scores = extract_scores(data.get("home"))
+        comp_scores = extract_scores(data.get("comp"))
+        home_loop = home_scores + [home_scores[0]]
+        comp_loop = comp_scores + [comp_scores[0]]
+        cat_loop  = categories  + [categories[0]]
+        fig = go.Figure()
+        fig.add_trace(go.Scatterpolar(
+            r=home_loop, theta=cat_loop, fill='toself', name='自家遊戲',
+            line_color='#3b82f6', fillcolor='rgba(59,130,246,0.3)',
+            mode='lines+markers+text',
+            text=[f"{v:.0f}" for v in home_scores] + [""],
+            textposition='top center'
+        ))
+        fig.add_trace(go.Scatterpolar(
+            r=comp_loop, theta=cat_loop, fill='toself', name='競品遊戲',
+            line_color='#ef4444', fillcolor='rgba(239,68,68,0.3)',
+            mode='lines+markers+text',
+            text=[f"{v:.0f}" for v in comp_scores] + [""],
+            textposition='top center'
+        ))
+        fig.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
+            showlegend=True, title="🎯 競品體驗維度對比"
+        )
+        sections = re.split(r'(?m)^---\s*$', report_text)
+        clean_sections = [s for s in sections if json_block_full not in s]
+        clean = "\n\n---\n\n".join(clean_sections).strip()
+        return fig, clean, {"home": home_scores, "comp": comp_scores}
+    except Exception:
+        return None, report_text, None
+
 def upload_video_to_gemini(client: genai.Client, uploaded_file, file_label: str = "") -> types.File:
     """
     將 Streamlit 的上傳檔案暫存到硬碟後使用新版 File API 上傳至 Gemini，
@@ -320,7 +371,7 @@ if st.session_state.get("is_analyzing", False):
         import markdown as md_lib
         # 先解析雷達圖，以便把圖表嵌入 HTML
         _fig_export, _clean_export, _scores_export = render_radar_chart(full_response_text)
-        radar_html_embed = _fig_export.to_html(full_html=False, include_plotlyjs='cdn') if _fig_export else ""
+        radar_html_embed = _fig_export.to_html(full_html=False, include_plotlyjs='inline') if _fig_export else ""
         html_body = md_lib.markdown(_clean_export if _clean_export else full_response_text, extensions=['tables'])
 
         styled_html = f"""<!DOCTYPE html>
@@ -382,65 +433,6 @@ if st.session_state.get("is_analyzing", False):
 # ================================
 # 5. 結果渲染與狀態保留區
 # ================================
-def render_radar_chart(report_text):
-    """
-    嘗試從報告 Markdown 內找出 JSON 評分區塊，畫出雷達圖。
-    回傳 (fig, clean_report, scores_dict | None)
-    """
-    import plotly.graph_objects as go
-
-    categories = ['節奏爽快感', '視覺特效', '音效層次', 'UI直覺度', '期待感營造']
-    match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', report_text)
-    if not match:
-        return None, report_text, None
-
-    json_str = match.group(1)
-    json_block_full = match.group(0)
-    try:
-        data = json.loads(json_str)
-
-        def extract_scores(score_data):
-            if isinstance(score_data, dict):
-                return [float(score_data.get(cat, 0)) for cat in categories]
-            elif isinstance(score_data, list) and len(score_data) >= 5:
-                return [float(v) for v in score_data[:5]]
-            return [0.0] * 5
-
-        home_scores = extract_scores(data.get("home"))
-        comp_scores = extract_scores(data.get("comp"))
-        home_loop = home_scores + [home_scores[0]]
-        comp_loop = comp_scores + [comp_scores[0]]
-        cat_loop  = categories  + [categories[0]]
-
-        fig = go.Figure()
-        fig.add_trace(go.Scatterpolar(
-            r=home_loop, theta=cat_loop, fill='toself', name='自家遊戲',
-            line_color='#3b82f6', fillcolor='rgba(59, 130, 246, 0.3)',
-            mode='lines+markers+text',
-            text=[f"{v:.0f}" for v in home_scores] + [""],
-            textposition='top center'
-        ))
-        fig.add_trace(go.Scatterpolar(
-            r=comp_loop, theta=cat_loop, fill='toself', name='競品遊戲',
-            line_color='#ef4444', fillcolor='rgba(239, 68, 68, 0.3)',
-            mode='lines+markers+text',
-            text=[f"{v:.0f}" for v in comp_scores] + [""],
-            textposition='top center'
-        ))
-        fig.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
-            showlegend=True,
-            title="🎯 競品體驗維度對比"
-        )
-        sections = re.split(r'(?m)^---\s*$', report_text)
-        clean_sections = [sec for sec in sections if json_block_full not in sec]
-        clean = "\n\n---\n\n".join(clean_sections).strip()
-        scores = {"home": home_scores, "comp": comp_scores}
-        return fig, clean, scores
-
-    except Exception:
-        return None, report_text, None
-
 
 if st.session_state.get("analysis_done", False):
     st.markdown("---")
