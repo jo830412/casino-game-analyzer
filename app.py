@@ -26,7 +26,7 @@ if "styled_html" not in st.session_state:
     st.session_state["styled_html"] = ""
 
 st.title("🎰 Casino Game AI 競品分析儀")
-st.caption("🏷️ 版本：v1.2.2 (修正雷達圖與評分格式)")
+st.caption("🏷️ 版本：v1.2.3 (修正評分區塊解析容錯)")
 st.markdown("快速比較自家產品與市面競品的遊玩體驗差異，並產生具有體感的結構化改善報告。")
 
 # 側邊欄：設定
@@ -406,46 +406,64 @@ if st.session_state.get("is_analyzing", False):
 # 5. 結果渲染與狀態保留區
 # ================================
 def render_radar_chart(report_text):
-    match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', report_text, re.DOTALL | re.IGNORECASE)
-    if match:
-        try:
-            data = json.loads(match.group(1))
-            categories = ['節奏爽快感', '視覺特效', '音效層次', 'UI直覺度', '期待感營造']
-            
-            def extract_scores(score_data):
-                if isinstance(score_data, dict):
-                    return [score_data.get(cat, 0) for cat in categories]
-                elif isinstance(score_data, list) and len(score_data) >= 5:
-                    return score_data[:5]
-                return [0] * 5
-                
-            home_scores = extract_scores(data.get("home"))
-            comp_scores = extract_scores(data.get("comp"))
-            
-            # 要封閉多邊形，需要在尾端補上起點
-            home_scores_loop = home_scores + [home_scores[0]]
-            comp_scores_loop = comp_scores + [comp_scores[0]]
-            cat_loop = categories + [categories[0]]
-            
-            import plotly.graph_objects as go
-            fig = go.Figure()
-            fig.add_trace(go.Scatterpolar(
-                r=home_scores_loop, theta=cat_loop, fill='toself', name='自家遊戲',
-                line_color='#3b82f6', fillcolor='rgba(59, 130, 246, 0.3)'
-            ))
-            fig.add_trace(go.Scatterpolar(
-                r=comp_scores_loop, theta=cat_loop, fill='toself', name='競品遊戲',
-                line_color='#ef4444', fillcolor='rgba(239, 68, 68, 0.3)'
-            ))
-            fig.update_layout(
-                polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
-                showlegend=True,
-                title="🎯 競品體驗維度對比"
-            )
-            return fig, re.sub(r'```(?:json)?\s*\{.*?\}\s*```', '', report_text, flags=re.DOTALL | re.IGNORECASE)
-        except Exception:
-            pass
-    return None, report_text
+    """
+    嘗試從報告 Markdown 內找出 JSON 評分區塊，畫出雷達圖。
+    成功: 返回 (fig, 移除 json 區塊後的報告)
+    失敗: 返回 (None, 原始報告) -- 確保內容不消失
+    """
+    import plotly.graph_objects as go
+    
+    categories = ['節奏爽快感', '視覺特效', '音效層次', 'UI直覺度', '期待感營造']
+    
+    # 更寬鬆的 Regex：同時支援 ```json 和 ``` 的代碼塊
+    match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', report_text)
+    
+    if not match:
+        # AI 沒有產出代碼塊，直接返回原始報告
+        return None, report_text
+    
+    json_str = match.group(1)
+    json_block_full = match.group(0)  # 包含 ```json ... ``` 的完整區塊
+    
+    try:
+        data = json.loads(json_str)
+        
+        def extract_scores(score_data):
+            if isinstance(score_data, dict):
+                return [float(score_data.get(cat, 0)) for cat in categories]
+            elif isinstance(score_data, list) and len(score_data) >= 5:
+                return [float(v) for v in score_data[:5]]
+            return [0.0] * 5
+
+        home_scores = extract_scores(data.get("home"))
+        comp_scores = extract_scores(data.get("comp"))
+        
+        # 封閉多邊形：尾端补上起點
+        home_loop = home_scores + [home_scores[0]]
+        comp_loop = comp_scores + [comp_scores[0]]
+        cat_loop  = categories  + [categories[0]]
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatterpolar(
+            r=home_loop, theta=cat_loop, fill='toself', name='自家遊戲',
+            line_color='#3b82f6', fillcolor='rgba(59, 130, 246, 0.3)'
+        ))
+        fig.add_trace(go.Scatterpolar(
+            r=comp_loop, theta=cat_loop, fill='toself', name='競品遊戲',
+            line_color='#ef4444', fillcolor='rgba(239, 68, 68, 0.3)'
+        ))
+        fig.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
+            showlegend=True,
+            title="🎯 競品體驗維度對比"
+        )
+        # 成功畫圖，移除報告中的原始 JSON 區塊
+        clean = report_text.replace(json_block_full, "").strip()
+        return fig, clean
+
+    except Exception as err:
+        # JSON 解析失敗——返回原始報告，避免內容丟失
+        return None, report_text
 
 if st.session_state.get("analysis_done", False):
     st.markdown("---")
