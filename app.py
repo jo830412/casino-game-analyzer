@@ -26,7 +26,7 @@ if "styled_html" not in st.session_state:
     st.session_state["styled_html"] = ""
 
 st.title("🎰 Casino Game AI 競品分析儀")
-st.caption("🏷️ 版本：v1.2.0 (新增雷達圖與區段分析)")
+st.caption("🏷️ 版本：v1.2.1 (獨立區段設定與排版優化)")
 st.markdown("快速比較自家產品與市面競品的遊玩體驗差異，並產生具有體感的結構化改善報告。")
 
 # 側邊欄：設定
@@ -92,10 +92,20 @@ st.subheader("⏱️ 分析區間設定")
 enable_time_range = st.checkbox("啟用指定分析區間 (僅分析精彩片段以節省 Token)", value=False)
 time_range_prompt = ""
 if enable_time_range:
-    col_t1, col_t2 = st.columns(2)
-    start_sec = col_t1.number_input("開始時間 (秒)", min_value=0, value=0, step=1)
-    end_sec = col_t2.number_input("結束時間 (秒)", min_value=1, value=30, step=1)
-    time_range_prompt = f"\n\n⏱️ **重要指令**：請你嚴格僅針對影片的 {start_sec} 秒 到 {end_sec} 秒 之間的內容進行分析，請忽略這段時間以外的畫面。"
+    st.caption("請輸入「分:秒」格式（例如：00:30, 01:15）")
+    # 使用 4 個欄位讓輸入框變小，且分成自家與競品
+    col_h1, col_h2, col_c1, col_c2 = st.columns(4)
+    home_start = col_h1.text_input("🏠 自家開始", value="00:00")
+    home_end = col_h2.text_input("🏠 自家結束", value="00:30")
+    comp_start = col_c1.text_input("🔥 競品開始", value="00:00")
+    comp_end = col_c2.text_input("🔥 競品結束", value="00:30")
+    
+    time_range_prompt = (
+        f"\n\n⏱️ **重要指令（時間區段分析）**：\n"
+        f"- 對於【自家遊戲】，請嚴格僅針對影片中 **{home_start} 到 {home_end}** 的畫面進行分析。\n"
+        f"- 對於【競品遊戲】，請嚴格僅針對影片中 **{comp_start} 到 {comp_end}** 的畫面進行分析。\n"
+        f"請完全忽略上述時間區段以外的其他畫面。"
+    )
 
 # ================================
 # 3. 核心處理函式
