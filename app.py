@@ -24,6 +24,7 @@ if "styled_html" not in st.session_state:
     st.session_state["styled_html"] = ""
 
 st.title("🎰 Casino Game AI 競品分析儀")
+st.caption("🏷️ 版本：v1.1.0 (報告排版強化版)")
 st.markdown("快速比較自家產品與市面競品的遊玩體驗差異，並產生具有體感的結構化改善報告。")
 
 # 側邊欄：設定
@@ -178,29 +179,30 @@ if st.session_state.get("is_analyzing", False):
 3. UI/UX 佈局：押注金額調整的直覺性、Spin 按鈕配置、餘額與贏分顯示的清晰度。
 4. 特殊玩法展演：Free Spin（免費遊戲）或 Bonus Game 的轉場流暢度與規則清晰度。
 
-請嚴格使用以下架構輸出 Markdown 報告（請善用粗體、列點與分隔線 `---` 讓一頁式的排版極度容易閱讀）：
+請嚴格使用以下 Markdown 架構輸出報告（請善用粗體、列點與分隔線 `---` 讓排版極度容易閱讀，並加入適當的 Emoji 增添質感）：
+
+## 🎯 1. 執行摘要
+> (請用一段話精準總結兩款產品在『玩家爽感營造』上的最大差異。)
 
 ---
-## 1. 執行摘要
-(請用一段話總結兩款產品在『玩家爽感營造』上的最大差異。)
+## ⚖️ 2. 優劣勢對比
+
+### 🌟 自家產品優勢：
+- (具體優勢 1)
+- ... (共 3 點)
+
+### ⚠️ 自家需改善劣勢：
+- (具體劣勢 1)
+- ... (共 3 點)
 
 ---
-## 2. 優劣勢對比
-**自家優勢：**
-- (優勢1)
-- ... (共3點)
-
-**自家需改善劣勢：**
-- (劣勢1)
-- ... (共3點)
-
----
-## 3. 關鍵差異深度解析
+## 🔍 3. 關鍵差異深度解析
 (針對上述『分析重點』或『使用者特別指定的觀察重點』，給出具體的比較，必須明確指出影片中發生差異的『具體畫面』或『時間軸』作為佐證。)
 
 ---
-## 4. 具體優化建議
-(基於測試員觀點，提出 2~3 個自家產品可優先調整的開發/美術建議。)"""
+## 💡 4. 具體優化建議
+(基於測試員觀點，提出 2~3 個自家產品可優先調整的開發/美術建議。請具體說明「如何改」以及「預期的改善效果」。)
+"""
 
         st.markdown("### 📊 競品體驗分析報告")
         
@@ -267,20 +269,65 @@ if st.session_state.get("is_analyzing", False):
             <title>競品體驗分析報告</title>
             <style>
                 body {{
-                    font-family: 'Helvetica Neue', Helvetica, Arial, 'Microsoft JhengHei', sans-serif;
-                    line-height: 1.6;
-                    color: #333;
-                    max-width: 900px;
-                    margin: 0 auto;
-                    padding: 2em;
-                    background-color: #f9f9f9;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Microsoft JhengHei', sans-serif;
+                    line-height: 1.8;
+                    color: #2d3748;
+                    background-color: #edf2f7;
+                    margin: 0;
+                    padding: 40px 20px;
                 }}
-                h1, h2, h3 {{ color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 0.3em; }}
-                ul, ol {{ padding-left: 20px; }}
-                table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
-                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                th {{ background-color: #f2f2f2; }}
-                .container {{ background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+                .container {{
+                    max-width: 850px;
+                    margin: 0 auto;
+                    background-color: #ffffff;
+                    padding: 40px 50px;
+                    border-radius: 12px;
+                    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+                }}
+                h1, h2, h3 {{ 
+                    color: #1a202c; 
+                    margin-top: 1.5em;
+                }}
+                h2 {{
+                    border-bottom: 3px solid #ebf8ff;
+                    padding-bottom: 0.4em;
+                    color: #2b6cb0;
+                }}
+                blockquote {{
+                    margin: 1.5em 0;
+                    padding: 1em 1.5em;
+                    background: #ebf8ff;
+                    border-left: 5px solid #3182ce;
+                    border-radius: 0 8px 8px 0;
+                    color: #2c5282;
+                    font-weight: 500;
+                }}
+                ul, ol {{ padding-left: 24px; margin-bottom: 1.5em; }}
+                li {{ margin-bottom: 0.5em; }}
+                table {{ 
+                    border-collapse: collapse; 
+                    width: 100%; 
+                    margin: 2em 0; 
+                    border-radius: 8px;
+                    overflow: hidden;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+                }}
+                th, td {{ 
+                    padding: 12px 15px; 
+                    text-align: left; 
+                }}
+                th {{ 
+                    background-color: #4299e1; 
+                    color: white; 
+                    font-weight: 600; 
+                }}
+                tr:nth-child(even) {{ background-color: #f7fafc; }}
+                hr {{
+                    border: 0;
+                    height: 1px;
+                    background: #e2e8f0;
+                    margin: 3em 0;
+                }}
             </style>
         </head>
         <body>
@@ -332,7 +379,8 @@ if st.session_state.get("analysis_done", False):
     
     with tab1:
         # 由於使用 st.rerun() 會重繪畫面，串流產生的文字會消失，所以在此直接顯示歷史報告
-        st.markdown(st.session_state["report_md"])
+        with st.container(border=True):
+            st.markdown(st.session_state["report_md"])
 
     with tab2:
         st.markdown("您可以將報告下載為精美的 HTML 格式以供保存，或下載 Markdown 備份。")
